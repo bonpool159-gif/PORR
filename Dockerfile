@@ -15,6 +15,9 @@ RUN npx prisma generate
 # Copy app source
 COPY . .
 
+# Set Google Fonts timeout to prevent AbortError during build
+ENV NEXT_FONT_GOOGLE_TIMEOUT=120000
+
 # Build the application
 RUN npm run build
 
