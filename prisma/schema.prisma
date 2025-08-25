@@ -1,0 +1,390 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OWNER
+  CASHIER
+  COURIER
+  CUSTOMER
+  MARKETER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  ONLINE
+  COD
+}
+
+enum DeliveryMode {
+  DELIVERY
+  PICKUP
+  DINE_IN
+}
+
+enum CampaignChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+  PUSH
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_DELIVERY
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  phone        String?  @unique
+  name         String
+  role         Role
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  ownedStores   Store[]     @relation("StoreOwner")
+  storeStaff    StoreStaff[]
+  orders        Order[]     @relation("CustomerOrders")
+  deliveries    Delivery[]  @relation("CourierDeliveries")
+  campaigns     Campaign[]
+  
+  @@map("users")
+}
+
+model Store {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  address     String
+  latitude    Float?
+  longitude   Float?
+  phone       String?
+  email       String?
+  logoUrl     String?
+  coverUrl    String?
+  isActive    Boolean   @default(true)
+  timezone    String    @default("UTC")
+  currency    String    @default("USD")
+  
+  // Business hours
+  openingHours Json?
+  
+  // Delivery settings
+  deliveryFee       Float   @default(0)
+  freeDeliveryMin   Float?
+  maxDeliveryRadius Float?
+  deliveryZones     Json?
+  
+  // Tax settings
+  taxRate     Float @default(0)
+  serviceFee  Float @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  owner       User         @relation("StoreOwner", fields: [ownerId], references: [id])
+  ownerId     String
+  staff       StoreStaff[]
+  categories  Category[]
+  products    Product[]
+  orders      Order[]
+  deliveries  Delivery[]
+  payments    Payment[]
+  customers   Customer[]
+  coupons     Coupon[]
+  campaigns   Campaign[]
+  
+  @@map("stores")
+}
+
+model StoreStaff {
+  id       String @id @default(cuid())
+  role     Role
+  isActive Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId  String
+
+  @@unique([storeId, userId])
+  @@map("store_staff")
+}
+
+model Category {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId  String
+  products Product[]
+  
+  @@map("categories")
+}
+
+model Product {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?
+  isAvailable Boolean @default(true)
+  sortOrder   Int     @default(0)
+  
+  // Product options
+  hasVariants Boolean @default(false)
+  variants    Json?
+  modifiers   Json?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store      Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId    String
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId String
+  orderItems OrderItem[]
+  
+  @@map("products")
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  name         String?
+  email        String?
+  phone        String?
+  address      String?
+  latitude     Float?
+  longitude    Float?
+  segments     String[] @default([])
+  loyaltyPoints Int     @default(0)
+  totalOrders  Int      @default(0)
+  totalSpent   Float    @default(0)
+  lastOrderAt  DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId String
+  orders  Order[]
+  
+  @@unique([storeId, email])
+  @@unique([storeId, phone])
+  @@map("customers")
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique
+  status        OrderStatus @default(PENDING)
+  deliveryMode  DeliveryMode
+  
+  // Customer info
+  customerName  String?
+  customerEmail String?
+  customerPhone String?
+  
+  // Delivery address
+  deliveryAddress String?
+  deliveryLat     Float?
+  deliveryLng     Float?
+  deliveryNotes   String?
+  
+  // Pricing
+  subtotal    Float
+  deliveryFee Float  @default(0)
+  taxAmount   Float  @default(0)
+  serviceFee  Float  @default(0)
+  discount    Float  @default(0)
+  total       Float
+  
+  // Special instructions
+  notes        String?
+  scheduledFor DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store      Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId    String
+  customer   User?       @relation("CustomerOrders", fields: [customerId], references: [id])
+  customerId String?
+  customerData Customer? @relation(fields: [customerDataId], references: [id])
+  customerDataId String?
+  items      OrderItem[]
+  delivery   Delivery?
+  payments   Payment[]
+  
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  quantity  Int
+  unitPrice Float
+  totalPrice Float
+  
+  // Customizations
+  modifiers Json?
+  notes     String?
+  
+  createdAt DateTime @default(now())
+
+  // Relations
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+  
+  @@map("order_items")
+}
+
+model Delivery {
+  id           String         @id @default(cuid())
+  status       DeliveryStatus @default(PENDING)
+  fee          Float
+  estimatedTime Int?           // in minutes
+  actualTime   Int?           // in minutes
+  distance     Float?         // in km
+  
+  // Courier tracking
+  pickedUpAt   DateTime?
+  deliveredAt  DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store     Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId   String
+  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String @unique
+  courier   User?  @relation("CourierDeliveries", fields: [courierId], references: [id])
+  courierId String?
+  
+  @@map("deliveries")
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  method          PaymentMethod
+  status          PaymentStatus @default(PENDING)
+  amount          Float
+  transactionRef  String?
+  gatewayResponse Json?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId String
+  
+  @@map("payments")
+}
+
+model Coupon {
+  id          String     @id @default(cuid())
+  code        String
+  type        CouponType
+  value       Float
+  minOrderValue Float?
+  maxDiscount Float?
+  usageLimit  Int?
+  usageCount  Int        @default(0)
+  isActive    Boolean    @default(true)
+  validFrom   DateTime?
+  validUntil  DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId String
+  
+  @@unique([storeId, code])
+  @@map("coupons")
+}
+
+model Campaign {
+  id          String          @id @default(cuid())
+  name        String
+  channel     CampaignChannel
+  audience    Json            // segmentation criteria
+  content     Json            // message content
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  metrics     Json?           // delivery, open, click rates
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store     Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId   String
+  createdBy User   @relation(fields: [createdById], references: [id])
+  createdById String
+  
+  @@map("campaigns")
+}
